@@ -211,7 +211,7 @@ def handle_long_triggered_message(triggered_match, source="second_channel"):
                 "orderType": "market"
             }
             
-            order_executor.send_webhook(webhook_payload, config.WEBHOOK_URL, webhook_qty, "Long Triggered webhook")
+            order_executor.send_webhook(webhook_payload, config.WEBHOOK_URL, webhook_qty, "Long Triggered webhook", is_entry_trade=True)
         else:
             print(f"Skipping webhook submission - quantity is {webhook_qty} (must be > 0)")
         
@@ -522,7 +522,7 @@ def handle_gold_bullish_entry(price: str, target: Optional[str] = None, target_5
             "orderType": "market"
         }
         
-        order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.GOLD_WEBHOOK_URL], "Gold bullish entry webhook")
+        order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.GOLD_WEBHOOK_URL], "Gold bullish entry webhook", is_entry_trade=True)
         print(f"Gold bullish entry webhook sent successfully")
         
         target_50_quantity = str(int(config.GOLD_QUANTITY / 1))
@@ -615,7 +615,7 @@ def handle_gold_bearish_entry(price: str, target: Optional[str] = None, target_5
             "orderType": "market"
         }
         
-        order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.GOLD_WEBHOOK_URL], "Gold bearish entry webhook")
+        order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.GOLD_WEBHOOK_URL], "Gold bearish entry webhook", is_entry_trade=True)
         print(f"Gold bearish entry webhook sent successfully")
         
         target_50_quantity = str(int(config.GOLD_QUANTITY / 1))
@@ -775,7 +775,7 @@ def handle_nq_bullish_entry(price: str, target: Optional[str] = None, target_50:
             "orderType": "market"
         }
         
-        order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.NQ_WEBHOOK_URL], "NQ bullish entry webhook")
+        order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.NQ_WEBHOOK_URL], "NQ bullish entry webhook", is_entry_trade=True)
         print(f"NQ bullish entry webhook sent successfully")
         
         target_50_quantity = str(int(config.NQ_QUANTITY / 1))
@@ -861,7 +861,7 @@ def handle_nq_bearish_entry(price: str, target: Optional[str] = None, target_50:
             "orderType": "market"
         }
         
-        order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.NQ_WEBHOOK_URL], "NQ bearish entry webhook")
+        order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.NQ_WEBHOOK_URL], "NQ bearish entry webhook", is_entry_trade=True)
         print(f"NQ bearish entry webhook sent successfully")
         
         target_50_quantity = str(int(config.NQ_QUANTITY / 1))
@@ -1384,7 +1384,7 @@ def check_last_message():
                         "quantity": str(webhook_qty)
                     }
                     
-                    order_executor.send_webhook(webhook_payload, config.WEBHOOK_URL, webhook_qty, "Discord message webhook")
+                    order_executor.send_webhook(webhook_payload, config.WEBHOOK_URL, webhook_qty, "Discord message webhook", is_entry_trade=is_buy)
                 else:
                     print(f"Skipping webhook submission - quantity is {webhook_qty} (must be > 0)")
                 
