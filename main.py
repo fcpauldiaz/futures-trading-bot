@@ -15,6 +15,8 @@ import position_tracker
 
 app = FastAPI()
 
+gold_trend: Optional[str] = None
+
 class TakeProfit(BaseModel):
     limitPrice: float
 
@@ -484,10 +486,26 @@ def handle_stop_loss_simple_message(stop_loss_match, source="second_channel"):
     except Exception as e:
         print(f"Error handling stop loss message: {e}")
 
+def is_gold_trend_aligned(action: str, trend: Optional[str]) -> bool:
+    if trend is None:
+        return True
+    
+    trend_lower = trend.lower()
+    if action == "buy" and trend_lower == "bullish":
+        return True
+    if action == "sell" and trend_lower == "bearish":
+        return True
+    return False
+
 def handle_gold_bullish_entry(price: str, target: Optional[str] = None, target_50: Optional[str] = None):
     if position_tracker.has_gold_order():
         print("Gold order already open, skipping new order submission")
-        return
+        return True
+    
+    global gold_trend
+    if not is_gold_trend_aligned("buy", gold_trend):
+        print(f"Gold bullish entry skipped - trend mismatch. Current trend: {gold_trend}, requested action: buy")
+        return False
     
     print(f"Gold bullish entry received with price: {price}")
     
@@ -566,14 +584,21 @@ def handle_gold_bullish_entry(price: str, target: Optional[str] = None, target_5
         }
         position_tracker.save_gold_order(order_info)
         print("Gold order saved locally")
+        return True
         
     except Exception as e:
         print(f"Error processing gold bullish entry: {e}")
+        return False
 
 def handle_gold_bearish_entry(price: str, target: Optional[str] = None, target_50: Optional[str] = None):
     if position_tracker.has_gold_order():
         print("Gold order already open, skipping new order submission")
-        return
+        return True
+    
+    global gold_trend
+    if not is_gold_trend_aligned("sell", gold_trend):
+        print(f"Gold bearish entry skipped - trend mismatch. Current trend: {gold_trend}, requested action: sell")
+        return False
     
     print(f"Gold bearish entry received with price: {price}")
     
@@ -649,9 +674,11 @@ def handle_gold_bearish_entry(price: str, target: Optional[str] = None, target_5
         }
         position_tracker.save_gold_order(order_info)
         print("Gold order saved locally")
+        return True
         
     except Exception as e:
         print(f"Error processing gold bearish entry: {e}")
+        return False
 
 def handle_gold_50_percent_target(quantity: Optional[str] = None):
     print(f"Gold 50% target hit received")
@@ -972,6 +999,48 @@ def handle_nq_exit():
     except Exception as e:
         print(f"Error processing NQ exit: {e}")
 
+@app.post("/gold-trend")
+def handle_gold_trend_webhook(payload: dict):
+    timestamp = datetime.now().isoformat()
+    print(f"[{timestamp}] Received Gold Trend payload: {json.dumps(payload, indent=2)}")
+    
+    try:
+        trend = payload.get("trend")
+        
+        if not trend:
+            return {
+                "status": "error",
+                "message": "Trend is required",
+                "timestamp": timestamp
+            }
+        
+        trend_lower = trend.lower()
+        if trend_lower not in ["bearish", "bullish"]:
+            return {
+                "status": "error",
+                "message": f"Invalid trend value: {trend}. Must be 'bearish' or 'bullish'",
+                "timestamp": timestamp
+            }
+        
+        global gold_trend
+        gold_trend = trend_lower
+        print(f"Gold trend updated to: {gold_trend}")
+        
+        return {
+            "status": "success",
+            "message": f"Gold trend set to {gold_trend}",
+            "trend": gold_trend,
+            "timestamp": timestamp
+        }
+        
+    except Exception as e:
+        print(f"Error processing Gold Trend webhook: {e}")
+        return {
+            "status": "error",
+            "message": f"Error processing webhook: {str(e)}",
+            "timestamp": timestamp
+        }
+
 @app.post("/gold")
 def handle_gold_webhook(payload: dict):
     timestamp = datetime.now().isoformat()
@@ -997,7 +1066,13 @@ def handle_gold_webhook(payload: dict):
                 }
             target = payload.get("target")
             target_50 = payload.get("target_50")
-            handle_gold_bullish_entry(price, target, target_50)
+            result = handle_gold_bullish_entry(price, target, target_50)
+            if result is False:
+                return {
+                    "status": "success",
+                    "message": "Gold bullish entry skipped due to trend mismatch",
+                    "timestamp": timestamp
+                }
             return {
                 "status": "success",
                 "message": "Gold bullish entry processed successfully",
@@ -1014,7 +1089,13 @@ def handle_gold_webhook(payload: dict):
                 }
             target = payload.get("target")
             target_50 = payload.get("target_50")
-            handle_gold_bearish_entry(price, target, target_50)
+            result = handle_gold_bearish_entry(price, target, target_50)
+            if result is False:
+                return {
+                    "status": "success",
+                    "message": "Gold bearish entry skipped due to trend mismatch",
+                    "timestamp": timestamp
+                }
             return {
                 "status": "success",
                 "message": "Gold bearish entry processed successfully",
