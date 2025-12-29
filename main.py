@@ -1340,10 +1340,10 @@ def check_last_message():
             
             if letter == 'A':
                 personal_qty = config.GLOBAL_QUANTITY
-                webhook_qty = 20
+                webhook_qty = config.GLOBAL_QUANTITY
             elif letter == 'B':
                 personal_qty = config.GLOBAL_QUANTITY
-                webhook_qty = 5
+                webhook_qty = 8
             elif letter == 'C':
                 personal_qty = config.GLOBAL_QUANTITY
                 webhook_qty = 5
@@ -1553,7 +1553,7 @@ def start_fastapi():
 if __name__ == "__main__":
     threading.Thread(target=start_fastapi, daemon=True).start()
     while True:
-        # check_last_message()
-        check_second_channel()
+        check_last_message()
+        # check_second_channel()
         time.sleep(5)
 
