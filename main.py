@@ -13,6 +13,9 @@ import message_parser
 import order_executor
 import position_tracker
 
+def is_weekday() -> bool:
+    return datetime.now().weekday() < 5
+
 app = FastAPI()
 
 gold_trend: Optional[str] = None
@@ -1057,6 +1060,9 @@ def handle_fbd_webhook(payload: dict):
         }
 
 def check_last_message():
+    if not is_weekday():
+        return
+    
     try:
         position_tracker.reset_orders_if_expired()
         
@@ -1183,6 +1189,9 @@ def check_last_message():
         print(f"Error: {e}")
 
 def check_second_channel():
+    if not is_weekday():
+        return
+    
     try:
         messages = discord_scraper.fetch_second_channel_messages()
        
