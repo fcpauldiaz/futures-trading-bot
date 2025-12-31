@@ -505,10 +505,10 @@ def handle_gold_bullish_entry(price: str):
         print("Gold order already open, skipping new order submission")
         return True
     
-    global gold_trend
-    if not is_gold_trend_aligned("buy", gold_trend):
-        print(f"Gold bullish entry skipped - trend mismatch. Current trend: {gold_trend}, requested action: buy")
-        return False
+    # global gold_trend
+    # if not is_gold_trend_aligned("buy", gold_trend):
+    #     print(f"Gold bullish entry skipped - trend mismatch. Current trend: {gold_trend}, requested action: buy")
+    #     return False
     
     print(f"Gold bullish entry received with price: {price}")
     
@@ -545,10 +545,10 @@ def handle_gold_bearish_entry(price: str):
         print("Gold order already open, skipping new order submission")
         return True
     
-    global gold_trend
-    if not is_gold_trend_aligned("sell", gold_trend):
-        print(f"Gold bearish entry skipped - trend mismatch. Current trend: {gold_trend}, requested action: sell")
-        return False
+    # global gold_trend
+    # if not is_gold_trend_aligned("sell", gold_trend):
+    #     print(f"Gold bearish entry skipped - trend mismatch. Current trend: {gold_trend}, requested action: sell")
+    #     return False
     
     print(f"Gold bearish entry received with price: {price}")
     
