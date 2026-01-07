@@ -214,7 +214,15 @@ def handle_long_triggered_message(triggered_match, source="second_channel"):
                 "orderType": "market"
             }
             
-            order_executor.send_webhook(webhook_payload, config.WEBHOOK_URL, webhook_qty, "Long Triggered webhook", is_entry_trade=True)
+            additional_context = {
+                "source": source,
+                "direction": "long",
+                "score": score,
+                "level": level,
+                "interval": interval
+            }
+            
+            order_executor.send_webhook(webhook_payload, config.WEBHOOK_URL, webhook_qty, "Long Triggered webhook", is_entry_trade=True, additional_context=additional_context)
         else:
             print(f"Skipping webhook submission - quantity is {webhook_qty} (must be > 0)")
         
@@ -523,7 +531,12 @@ def handle_gold_bullish_entry(price: str):
             "orderType": "market"
         }
         
-        order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.GOLD_WEBHOOK_URL], "Gold bullish entry webhook", is_entry_trade=True)
+        additional_context = {
+            "source": "gold_webhook",
+            "direction": "long"
+        }
+        
+        order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.GOLD_WEBHOOK_URL], "Gold bullish entry webhook", is_entry_trade=True, additional_context=additional_context)
         print(f"Gold bullish entry webhook sent successfully")
         
         order_info = {
@@ -563,7 +576,12 @@ def handle_gold_bearish_entry(price: str):
             "orderType": "market"
         }
         
-        order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.GOLD_WEBHOOK_URL], "Gold bearish entry webhook", is_entry_trade=True)
+        additional_context = {
+            "source": "gold_webhook",
+            "direction": "short"
+        }
+        
+        order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.GOLD_WEBHOOK_URL], "Gold bearish entry webhook", is_entry_trade=True, additional_context=additional_context)
         print(f"Gold bearish entry webhook sent successfully")
         
         order_info = {
@@ -673,7 +691,12 @@ def handle_nq_bullish_entry(price: str):
             "orderType": "market"
         }
         
-        order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.NQ_WEBHOOK_URL], "NQ bullish entry webhook", is_entry_trade=True)
+        additional_context = {
+            "source": "nq_webhook",
+            "direction": "long"
+        }
+        
+        order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.NQ_WEBHOOK_URL], "NQ bullish entry webhook", is_entry_trade=True, additional_context=additional_context)
         print(f"NQ bullish entry webhook sent successfully")
         
         order_info = {
@@ -706,7 +729,12 @@ def handle_nq_bearish_entry(price: str):
             "orderType": "market"
         }
         
-        order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.NQ_WEBHOOK_URL], "NQ bearish entry webhook", is_entry_trade=True)
+        additional_context = {
+            "source": "nq_webhook",
+            "direction": "short"
+        }
+        
+        order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.NQ_WEBHOOK_URL], "NQ bearish entry webhook", is_entry_trade=True, additional_context=additional_context)
         print(f"NQ bearish entry webhook sent successfully")
         
         order_info = {
@@ -1176,14 +1204,23 @@ def check_last_message():
                         "quantity": str(webhook_qty)
                     }
                     
-                    order_executor.send_webhook(webhook_payload, config.WEBHOOK_URL, webhook_qty, "Discord message webhook", is_entry_trade=is_buy)
+                    additional_context = {
+                        "source": "discord_message",
+                        "direction": order_direction,
+                        "letter": letter,
+                        "stop_value": stop_value
+                    }
+                    
+                    order_executor.send_webhook(webhook_payload, config.WEBHOOK_URL, webhook_qty, "Discord message webhook", is_entry_trade=is_buy, additional_context=additional_context)
                 else:
                     print(f"Skipping webhook submission - quantity is {webhook_qty} (must be > 0)")
                 
             except Exception as e:
                 print(f"Error submitting order: {e}")
         else:
-           print(content)
+            if not discord_scraper.is_invalid_message_logged(msg_id, content):
+                print(content)
+                discord_scraper.mark_invalid_message_logged(msg_id, content)
 
     except Exception as e:
         print(f"Error: {e}")

@@ -1,8 +1,10 @@
 import requests
+import hashlib
 from typing import Optional, Dict, Any
 import config
 
 processed_discord_messages = set()
+logged_invalid_messages = set()
 
 def get_headers(token: str) -> Dict[str, str]:
     return {"Authorization": token}
@@ -41,4 +43,12 @@ def is_discord_message_processed(msg_id: str) -> bool:
 
 def mark_discord_message_processed(msg_id: str):
     processed_discord_messages.add(msg_id)
+
+def is_invalid_message_logged(msg_id: Optional[str], content: str = "") -> bool:
+    identifier = msg_id if msg_id else hashlib.md5(content.encode()).hexdigest()
+    return identifier in logged_invalid_messages
+
+def mark_invalid_message_logged(msg_id: Optional[str], content: str = ""):
+    identifier = msg_id if msg_id else hashlib.md5(content.encode()).hexdigest()
+    logged_invalid_messages.add(identifier)
 
