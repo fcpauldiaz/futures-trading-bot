@@ -508,7 +508,7 @@ def is_gold_trend_aligned(action: str, trend: Optional[str]) -> bool:
         return True
     return False
 
-def handle_gold_bullish_entry(price: str):
+def handle_gold_bullish_entry(price: str, target_50: Optional[str] = None):
     if position_tracker.has_gold_order():
         print("Gold order already open, skipping new order submission")
         return True
@@ -522,6 +522,7 @@ def handle_gold_bullish_entry(price: str):
     
     try:
         original_action = "buy"
+        opposite_action = "sell"
         
         entry_webhook_payload = {
             "ticker": config.GOLD_TICKER,
@@ -538,6 +539,43 @@ def handle_gold_bullish_entry(price: str):
         
         order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.GOLD_WEBHOOK_URL], "Gold bullish entry webhook", is_entry_trade=True, additional_context=additional_context)
         print(f"Gold bullish entry webhook sent successfully")
+
+        target_50_quantity = str(int(config.GOLD_QUANTITY / 1))
+        target_quantity = target_50_quantity
+        
+        if not target_50:
+            price_float = float(price)
+            target = str(price_float + 14.0)
+            print(f"No target provided, setting default target to {target} (entry price + 14 points)")
+        
+        if target_50:
+            target_webhook_payload = {
+                "ticker": config.GOLD_TICKER,
+                "action": opposite_action,
+                "price": target,
+                "orderType": "limit",
+                "quantity": target_quantity
+            }
+            order_executor.send_webhook_to_multiple_urls(target_webhook_payload, [config.GOLD_WEBHOOK_URL], "Gold target webhook")
+            print(f"Gold target webhook sent successfully at price: {target} for quantity: {target_quantity}")
+
+        if price:
+            price_float = float(price)
+            stop_price = price_float - 7.0
+            stop_webhook_payload = {
+                "ticker": config.GOLD_TICKER,
+                "action": opposite_action,
+                "orderType": "stop",
+                "stopPrice": str(stop_price),
+                "quantityType": "fixed_quantity",
+                "quantity": str(config.GOLD_QUANTITY)
+            }
+            order_executor.send_webhook_to_multiple_urls(stop_webhook_payload, [config.GOLD_WEBHOOK_URL], "Gold stop webhook")
+            print(f"Gold stop webhook sent successfully at price: {stop_price} (7 points below entry {price})")
+            stop = str(stop_price)
+        else:
+            stop = None
+        
         
         order_info = {
             "action": original_action,
@@ -553,7 +591,7 @@ def handle_gold_bullish_entry(price: str):
         print(f"Error processing gold bullish entry: {e}")
         return False
 
-def handle_gold_bearish_entry(price: str):
+def handle_gold_bearish_entry(price: str, target_50: Optional[str] = None):
     if position_tracker.has_gold_order():
         print("Gold order already open, skipping new order submission")
         return True
@@ -567,7 +605,7 @@ def handle_gold_bearish_entry(price: str):
     
     try:
         original_action = "sell"
-        
+        opposite_action = "buy"
         entry_webhook_payload = {
             "ticker": config.GOLD_TICKER,
             "action": original_action,
@@ -583,12 +621,47 @@ def handle_gold_bearish_entry(price: str):
         
         order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.GOLD_WEBHOOK_URL], "Gold bearish entry webhook", is_entry_trade=True, additional_context=additional_context)
         print(f"Gold bearish entry webhook sent successfully")
+        target_50_quantity = str(int(config.GOLD_QUANTITY / 1))
+        
+        if not target and not target_50:
+            price_float = float(price)
+            target = str(price_float - 14.0)
+            print(f"No target provided, setting default target to {target} (entry price - 14 points)")
+        
+        if target_50:
+            target_50_webhook_payload = {
+                "ticker": config.GOLD_TICKER,
+                "action": opposite_action,
+                "price": target_50,
+                "orderType": "limit",
+                "quantity": target_50_quantity
+            }
+            order_executor.send_webhook_to_multiple_urls(target_50_webhook_payload, [config.GOLD_WEBHOOK_URL], "Gold target_50 webhook")
+        
+        if price:
+            price_float = float(price)
+            stop_price = price_float + 7.0
+            stop_webhook_payload = {
+                "ticker": config.GOLD_TICKER,
+                "action": opposite_action,
+                "time": current_time,
+                "orderType": "stop",
+                "stopPrice": str(stop_price),
+                "quantityType": "fixed_quantity",
+                "quantity": str(config.GOLD_QUANTITY)
+            }
+            order_executor.send_webhook_to_multiple_urls(stop_webhook_payload, [config.GOLD_WEBHOOK_URL], "Gold stop webhook")
+            stop = str(stop_price)
+        else:
+            stop = None
         
         order_info = {
             "action": original_action,
             "ticker": config.GOLD_TICKER,
             "price": price,
-            "quantity": config.GOLD_QUANTITY
+            "quantity": config.GOLD_QUANTITY,
+            "target_50": target_50,
+            "stop": stop
         }
         position_tracker.save_gold_order(order_info)
         print("Gold order saved locally")
@@ -889,7 +962,8 @@ def handle_gold_webhook(payload: dict):
                     "message": "Price is required for bullish_entry action",
                     "timestamp": timestamp
                 }
-            result = handle_gold_bullish_entry(price)
+            target_50 = payload.get("target_50")
+            result = handle_gold_bullish_entry(price, target_50)
             if result is False:
                 return {
                     "status": "success",
@@ -910,7 +984,8 @@ def handle_gold_webhook(payload: dict):
                     "message": "Price is required for bearish_entry action",
                     "timestamp": timestamp
                 }
-            result = handle_gold_bearish_entry(price)
+            target_50 = payload.get("target_50")
+            result = handle_gold_bearish_entry(price, target_50)
             if result is False:
                 return {
                     "status": "success",
