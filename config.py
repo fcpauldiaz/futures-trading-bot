@@ -23,28 +23,6 @@ ORDER_FILE = "open_order.json"
 GOLD_ORDER_FILE = "open_gold_order.json"
 NQ_ORDER_FILE = "open_nq_order.json"
 
-TOKEN = os.getenv("DISCORD_TOKEN", "")
-TOKEN_2 = os.getenv("DISCORD_TOKEN_2", "")
-CHANNEL_ID = os.getenv("DISCORD_CHANNEL_ID", "")
-CHANNEL_ID_2 = os.getenv("DISCORD_CHANNEL_ID_2", "")
-API_URL = f"https://discord.com/api/v10/channels/{CHANNEL_ID}/messages?limit=1"
-API_URL_2 = f"https://discord.com/api/v9/channels/{CHANNEL_ID_2}/messages?limit=2"
-
-GENERAL_CHANNEL_TOKEN = os.getenv("GENERAL_CHANNEL_TOKEN", "")
-GENERAL_CHANNEL_ID = os.getenv("GENERAL_CHANNEL_ID", "")
-
-PATTERN = re.compile(
-    r"ES (long|short) (\d+): ([A-Z])(?:\s+\w+)?\s*.*Stop: (\d+)", re.IGNORECASE | re.DOTALL
-)
-
-TRIM_PATTERN = re.compile(
-    r"#alert trim (\d+)/(\d+)", re.IGNORECASE
-)
-
-STOPPED_PATTERN = re.compile(
-    r"#alert stopped", re.IGNORECASE
-)
-
 LONG_TRIGGERED_PATTERN = re.compile(
     r"Ticker: \*\*([^*]+)\*\*\s*\nInterval: \*\*(\d+)\*\*\s*\nLevel: \*\*([\d.]+)\*\*\s*\nScore: \*\*(\d+/\d+)\*\*\s*\nPrice: \*\*([\d.]+)\*\*\s*\nTime: \*\*([\d\s:-]+)\*\*",
     re.IGNORECASE | re.MULTILINE

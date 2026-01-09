@@ -1,5 +1,3 @@
-import time
-import threading
 import json
 from datetime import datetime
 from typing import Optional
@@ -8,13 +6,9 @@ from pydantic import BaseModel
 import uvicorn
 
 import config
-import discord_scraper
 import message_parser
 import order_executor
 import position_tracker
-
-def is_weekday() -> bool:
-    return datetime.now().weekday() < 5
 
 app = FastAPI()
 
@@ -543,6 +537,7 @@ def handle_gold_bullish_entry(price: str, target_50: Optional[str] = None):
         target_50_quantity = str(int(config.GOLD_QUANTITY / 1))
         target_quantity = target_50_quantity
         
+        target = None
         if not target_50:
             price_float = float(price)
             target = str(price_float + 14.0)
@@ -552,12 +547,12 @@ def handle_gold_bullish_entry(price: str, target_50: Optional[str] = None):
             target_webhook_payload = {
                 "ticker": config.GOLD_TICKER,
                 "action": opposite_action,
-                "price": target,
+                "price": target_50,
                 "orderType": "limit",
                 "quantity": target_quantity
             }
             order_executor.send_webhook_to_multiple_urls(target_webhook_payload, [config.GOLD_WEBHOOK_URL], "Gold target webhook")
-            print(f"Gold target webhook sent successfully at price: {target} for quantity: {target_quantity}")
+            print(f"Gold target webhook sent successfully at price: {target_50} for quantity: {target_quantity}")
 
         if price:
             price_float = float(price)
@@ -623,7 +618,8 @@ def handle_gold_bearish_entry(price: str, target_50: Optional[str] = None):
         print(f"Gold bearish entry webhook sent successfully")
         target_50_quantity = str(int(config.GOLD_QUANTITY / 1))
         
-        if not target and not target_50:
+        target = None
+        if not target_50:
             price_float = float(price)
             target = str(price_float - 14.0)
             print(f"No target provided, setting default target to {target} (entry price - 14 points)")
@@ -641,6 +637,7 @@ def handle_gold_bearish_entry(price: str, target_50: Optional[str] = None):
         if price:
             price_float = float(price)
             stop_price = price_float + 7.0
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
             stop_webhook_payload = {
                 "ticker": config.GOLD_TICKER,
                 "action": opposite_action,
@@ -1162,305 +1159,7 @@ def handle_fbd_webhook(payload: dict):
             "timestamp": timestamp
         }
 
-def check_last_message():
-    if not is_weekday():
-        return
-    
-    try:
-        position_tracker.reset_orders_if_expired()
-        
-        msg = discord_scraper.fetch_last_message()
-        if not msg:
-            print("No messages found.")
-            return
-
-        content = msg.get("content", "")
-        mention_everyone = msg.get("mention_everyone", False)
-        msg_id = msg.get("id")
-
-        stopped_match = message_parser.parse_stopped_message(content)
-        if mention_everyone and stopped_match:
-            if msg_id and discord_scraper.is_discord_message_processed(msg_id):
-                return
-            
-            handle_stopped_message()
-            if msg_id:
-                discord_scraper.mark_discord_message_processed(msg_id)
-            return
-
-        trim_match = message_parser.parse_trim_message(content)
-        if mention_everyone and trim_match:
-            msg_id = msg.get("id")
-            if msg_id and discord_scraper.is_discord_message_processed(msg_id):
-                print(f"Trim message already processed (Discord message ID: {msg_id}), skipping duplicate")
-                return
-            
-            numerator = int(trim_match.group(1))
-            denominator = int(trim_match.group(2))
-            time_str = msg.get("timestamp", datetime.now().isoformat())
-            message_id = message_parser.create_message_id("trim", numerator, denominator, 0, time_str)
-            
-            if message_parser.is_message_processed(message_id):
-                if msg_id:
-                    discord_scraper.mark_discord_message_processed(msg_id)
-                return
-            
-            handle_trim_message(trim_match)
-            if msg_id:
-                discord_scraper.mark_discord_message_processed(msg_id)
-            message_parser.mark_message_processed(message_id)
-            return
-
-        match = message_parser.parse_es_order_message(content)
-        if mention_everyone and match:
-            if position_tracker.has_open_order():
-                print("Order already open, skipping new order submission")
-                return
-                
-            print("Matched message:")
-            print(content)
-            
-            order_direction = match.group(1).lower()
-            long_value = match.group(2)
-            letter = match.group(3).upper()
-            stop_value = match.group(4)
-            
-            print(f"Retrieved values: ES {order_direction}: {long_value}, Letter: {letter}, Stop: {stop_value}")
-            
-            order_type = 1
-            if order_direction == "long":
-                is_buy = True
-            else:
-                is_buy = False
-            
-            if letter == 'A':
-                personal_qty = config.GLOBAL_QUANTITY
-                webhook_qty = config.GLOBAL_QUANTITY
-            elif letter == 'B':
-                personal_qty = config.GLOBAL_QUANTITY
-                webhook_qty = 8
-            elif letter == 'C':
-                personal_qty = config.GLOBAL_QUANTITY
-                webhook_qty = 5
-            else:
-                print(f"Ignoring order with letter '{letter}' - only 'A', 'B', 'C' orders are processed")
-                return
-            
-            try:
-                result1 = "SIMULATED_ORDER_RESULT"
-                print(f"Would submit order from Discord message: is_buy={is_buy}, qty={personal_qty}, order_type={order_type}")
-                print(result1)
-                
-                order_info = {
-                    "action": "buy" if is_buy else "sell",
-                    "direction": order_direction,
-                    "ticker": config.TICKER_SYMBOL,
-                    "letter": letter,
-                    "stop_value": stop_value,
-                    "order_type": order_type,
-                    "source": "discord_message",
-                    "quantities": {
-                        "personal": personal_qty,
-                        "webhook": webhook_qty
-                    },
-                    "results": [
-                        str(result1) if result1 else None
-                    ]
-                }
-                position_tracker.save_open_order(order_info)
-                print("Order saved locally")
-                
-                if webhook_qty > 0:
-                    webhook_payload = {
-                        "ticker": config.TICKER_SYMBOL,
-                        "price": str(long_value),
-                        "action": "buy" if is_buy else "exit",
-                        "orderType": "market",
-                        "quantity": str(webhook_qty)
-                    }
-                    
-                    additional_context = {
-                        "source": "discord_message",
-                        "direction": order_direction,
-                        "letter": letter,
-                        "stop_value": stop_value
-                    }
-                    
-                    order_executor.send_webhook(webhook_payload, config.WEBHOOK_URL, webhook_qty, "Discord message webhook", is_entry_trade=is_buy, additional_context=additional_context)
-                else:
-                    print(f"Skipping webhook submission - quantity is {webhook_qty} (must be > 0)")
-                
-            except Exception as e:
-                print(f"Error submitting order: {e}")
-        else:
-            if not discord_scraper.is_invalid_message_logged(msg_id, content):
-                print(content)
-                discord_scraper.mark_invalid_message_logged(msg_id, content)
-
-    except Exception as e:
-        print(f"Error: {e}")
-
-def check_second_channel():
-    if not is_weekday():
-        return
-    
-    try:
-        messages = discord_scraper.fetch_second_channel_messages()
-       
-        if not messages:
-            print("No messages found in second channel")
-            return
-
-        msg = messages[0]
-        msg_id = msg.get("id")
-       
-        embeds = msg.get("embeds", [])
-       
-        embed_content = ""
-        
-        if embeds and len(embeds) > 0:
-            embed_content = embeds[0].get("description", "")
-        
-        stopped_match = message_parser.parse_stopped_message(embed_content)
-        if stopped_match:
-            if msg_id and discord_scraper.is_discord_message_processed(msg_id):
-                return
-            
-            print("Stopped message found in second channel:")
-            handle_stopped_message()
-            if msg_id:
-                discord_scraper.mark_discord_message_processed(msg_id)
-            return
-        
-        target_hit_match = message_parser.parse_target_hit_message(embed_content)
-        if target_hit_match:
-            if msg_id and discord_scraper.is_discord_message_processed(msg_id):
-                return
-            
-            ticker = config.TICKER_SYMBOL
-            target_price = float(target_hit_match.group(4))
-            entry_price = float(target_hit_match.group(5))
-            profit = float(target_hit_match.group(6))
-            time_str = target_hit_match.group(7)
-            message_id = message_parser.create_message_id(ticker, target_price, entry_price, profit, time_str)
-            
-            if message_parser.is_message_processed(message_id):
-                if msg_id:
-                    discord_scraper.mark_discord_message_processed(msg_id)
-                return
-            
-            print("Target 1 Hit message found in second channel:")
-            handle_target_hit_message(target_hit_match, source="second_channel")
-            if msg_id:
-                discord_scraper.mark_discord_message_processed(msg_id)
-            return
-        
-        target2_hit_match = message_parser.parse_target2_hit_message(embed_content)
-        if target2_hit_match:
-            if msg_id and discord_scraper.is_discord_message_processed(msg_id):
-                return
-            
-            ticker = config.TICKER_SYMBOL
-            target_price = float(target2_hit_match.group(4))
-            entry_price = float(target2_hit_match.group(5))
-            profit = float(target2_hit_match.group(6))
-            time_str = target2_hit_match.group(7)
-            message_id = message_parser.create_message_id(ticker, target_price, entry_price, profit, time_str)
-            
-            if message_parser.is_message_processed(message_id):
-                if msg_id:
-                    discord_scraper.mark_discord_message_processed(msg_id)
-                return
-            
-            print("Target 2 Hit message found in second channel:")
-            handle_target2_hit_message(target2_hit_match, source="second_channel")
-            if msg_id:
-                discord_scraper.mark_discord_message_processed(msg_id)
-            return
-        
-        stop_loss_match = message_parser.parse_stop_loss_message(embed_content)
-        if stop_loss_match:
-            if msg_id and discord_scraper.is_discord_message_processed(msg_id):
-                print(f"Stop Loss Hit message already processed (Discord message ID: {msg_id}), skipping duplicate")
-                return
-            
-            ticker = config.TICKER_SYMBOL
-            entry_price = float(stop_loss_match.group(4))
-            exit_price = float(stop_loss_match.group(5))
-            loss = float(stop_loss_match.group(6))
-            time_str = stop_loss_match.group(7)
-            message_id = message_parser.create_message_id(ticker, exit_price, entry_price, loss, time_str)
-            
-            if message_parser.is_message_processed(message_id):
-                if msg_id:
-                    discord_scraper.mark_discord_message_processed(msg_id)
-                return
-            
-            print("Stop Loss Hit message found in second channel:")
-            handle_stop_loss_message(stop_loss_match, source="second_channel")
-            if msg_id:
-                discord_scraper.mark_discord_message_processed(msg_id)
-            return
-        
-        stop_loss_simple_match = message_parser.parse_stop_loss_simple_message(embed_content)
-        if stop_loss_simple_match and "Loss:" in embed_content:
-            if msg_id and discord_scraper.is_discord_message_processed(msg_id):
-                return
-            
-            ticker = config.TICKER_SYMBOL
-            entry_price = float(stop_loss_simple_match.group(4))
-            exit_price = float(stop_loss_simple_match.group(5))
-            loss = float(stop_loss_simple_match.group(6))
-            time_str = datetime.now().isoformat()
-            message_id = message_parser.create_message_id(ticker, exit_price, entry_price, loss, time_str)
-            
-            if message_parser.is_message_processed(message_id):
-                if msg_id:
-                    discord_scraper.mark_discord_message_processed(msg_id)
-                return
-            
-            print("Stop Loss message found in second channel (simple format):")
-            handle_stop_loss_simple_message(stop_loss_simple_match, source="second_channel")
-            if msg_id:
-                discord_scraper.mark_discord_message_processed(msg_id)
-            return
-        
-        triggered_match = message_parser.parse_long_triggered_message(embed_content)
-        if triggered_match:
-            if msg_id and discord_scraper.is_discord_message_processed(msg_id):
-                print(f"Long Triggered message already processed (Discord message ID: {msg_id}), skipping duplicate")
-                return
-            
-            ticker = config.TICKER_SYMBOL
-            interval = int(triggered_match.group(2))
-            level = float(triggered_match.group(3))
-            score = triggered_match.group(4)
-            price = float(triggered_match.group(5))
-            time_str = triggered_match.group(6)
-            message_id = message_parser.create_message_id(ticker, price, price, 0, time_str)
-            
-            if message_parser.is_message_processed(message_id):
-                print(f"Long Triggered message already processed (content ID: {message_id}), skipping duplicate")
-                if msg_id:
-                    discord_scraper.mark_discord_message_processed(msg_id)
-                return
-            
-            print("Long Triggered message found in second channel: " + datetime.now().isoformat())
-            handle_long_triggered_message(triggered_match, source="second_channel")
-            if msg_id:
-                discord_scraper.mark_discord_message_processed(msg_id)
-            return
-
-    except Exception as e:
-        print(f"Error checking second channel: {e}")
-
-def start_fastapi():
-    uvicorn.run(app, host="0.0.0.0", port=8000)
 
 if __name__ == "__main__":
-    threading.Thread(target=start_fastapi, daemon=True).start()
-    while True:
-        check_last_message()
-        # check_second_channel()
-        time.sleep(5)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 
