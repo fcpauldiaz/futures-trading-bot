@@ -515,6 +515,8 @@ def handle_gold_bullish_entry(price: str, target_50: Optional[str] = None):
     print(f"Gold bullish entry received with price: {price}")
     
     try:
+        order_executor.send_cancel_webhook(config.GOLD_TICKER, config.GOLD_WEBHOOK_URL)
+        
         original_action = "buy"
         opposite_action = "sell"
         
@@ -599,6 +601,8 @@ def handle_gold_bearish_entry(price: str, target_50: Optional[str] = None):
     print(f"Gold bearish entry received with price: {price}")
     
     try:
+        order_executor.send_cancel_webhook(config.GOLD_TICKER, config.GOLD_WEBHOOK_URL)
+        
         original_action = "sell"
         opposite_action = "buy"
         entry_webhook_payload = {
@@ -751,6 +755,8 @@ def handle_nq_bullish_entry(price: str):
     print(f"NQ bullish entry received with price: {price}")
     
     try:
+        order_executor.send_cancel_webhook(config.NQ_TICKER, config.NQ_WEBHOOK_URL)
+        
         original_action = "buy"
         
         entry_webhook_payload = {
@@ -789,6 +795,8 @@ def handle_nq_bearish_entry(price: str):
     print(f"NQ bearish entry received with price: {price}")
     
     try:
+        order_executor.send_cancel_webhook(config.NQ_TICKER, config.NQ_WEBHOOK_URL)
+        
         original_action = "sell"
         
         entry_webhook_payload = {
