@@ -775,11 +775,32 @@ def handle_nq_bullish_entry(price: str):
         order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.NQ_WEBHOOK_URL], "NQ bullish entry webhook", is_entry_trade=True, additional_context=additional_context)
         print(f"NQ bullish entry webhook sent successfully")
         
+        if price:
+            price_float = float(price)
+            opposite_action = "sell"
+            stop_price = price_float - 7.0
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+            stop_webhook_payload = {
+                "ticker": config.NQ_TICKER,
+                "action": opposite_action,
+                "time": current_time,
+                "orderType": "stop",
+                "stopPrice": str(stop_price),
+                "quantityType": "fixed_quantity",
+                "quantity": str(config.NQ_QUANTITY)
+            }
+            order_executor.send_webhook_to_multiple_urls(stop_webhook_payload, [config.NQ_WEBHOOK_URL], "NQ stop webhook")
+            print(f"NQ stop webhook sent successfully at price: {stop_price} (7 points below entry {price})")
+            stop = str(stop_price)
+        else:
+            stop = None
+        
         order_info = {
             "action": original_action,
             "ticker": config.NQ_TICKER,
             "price": price,
-            "quantity": config.NQ_QUANTITY
+            "quantity": config.NQ_QUANTITY,
+            "stop": stop
         }
         position_tracker.save_nq_order(order_info)
         print("NQ order saved locally")
@@ -815,11 +836,32 @@ def handle_nq_bearish_entry(price: str):
         order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.NQ_WEBHOOK_URL], "NQ bearish entry webhook", is_entry_trade=True, additional_context=additional_context)
         print(f"NQ bearish entry webhook sent successfully")
         
+        if price:
+            price_float = float(price)
+            opposite_action = "buy"
+            stop_price = price_float + 7.0
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+            stop_webhook_payload = {
+                "ticker": config.NQ_TICKER,
+                "action": opposite_action,
+                "time": current_time,
+                "orderType": "stop",
+                "stopPrice": str(stop_price),
+                "quantityType": "fixed_quantity",
+                "quantity": str(config.NQ_QUANTITY)
+            }
+            order_executor.send_webhook_to_multiple_urls(stop_webhook_payload, [config.NQ_WEBHOOK_URL], "NQ stop webhook")
+            print(f"NQ stop webhook sent successfully at price: {stop_price} (7 points above entry {price})")
+            stop = str(stop_price)
+        else:
+            stop = None
+        
         order_info = {
             "action": original_action,
             "ticker": config.NQ_TICKER,
             "price": price,
-            "quantity": config.NQ_QUANTITY
+            "quantity": config.NQ_QUANTITY,
+            "stop": stop
         }
         position_tracker.save_nq_order(order_info)
         print("NQ order saved locally")
