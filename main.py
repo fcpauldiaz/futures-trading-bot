@@ -520,7 +520,7 @@ def handle_gold_bullish_entry(price: str, target_50: Optional[str] = None):
         original_action = "buy"
         opposite_action = "sell"
         
-        entry_webhook_  payload = {
+        entry_webhook_payload = {
             "ticker": config.GOLD_TICKER,
             "action": original_action,
             "price": price,
