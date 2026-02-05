@@ -751,80 +751,54 @@ def handle_nq_bullish_entry(price: str, target_50: Optional[str] = None):
     if position_tracker.has_nq_order():
         print("NQ order already open, skipping new order submission")
         return
-    
+
     print(f"NQ bullish entry received with price: {price}")
-    
+
     try:
         order_executor.send_cancel_webhook(config.NQ_TICKER, config.NQ_WEBHOOK_URL)
-        
-        original_action = "buy"
-        opposite_action = "sell"
-        
-        entry_webhook_payload = {
+
+        signal_price = float(price)
+        take_profit_amount = abs(float(target_50) - signal_price) if target_50 else 30
+        if not target_50:
+            print(f"No target provided, using default take profit amount: {take_profit_amount} points")
+
+        bracket_payload = {
             "ticker": config.NQ_TICKER,
-            "action": original_action,
-            "price": price,
+            "action": "buy",
+            "orderType": "market",
+            "signalPrice": signal_price,
             "quantity": str(config.NQ_QUANTITY),
-            "orderType": "market"
+            "takeProfit": {"amount": take_profit_amount},
+            "stopLoss": {"type": "stop", "amount": 20},
         }
-        
+
         additional_context = {
             "source": "nq_webhook",
-            "direction": "long"
+            "direction": "long",
         }
-        
-        order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.NQ_WEBHOOK_URL], "NQ bullish entry webhook", is_entry_trade=True, additional_context=additional_context)
-        print(f"NQ bullish entry webhook sent successfully")
-        
-        target = None
-        if not target_50:
-            price_float = float(price)
-            target = str(price_float + 30.0)
-            print(f"No target provided, setting default target to {target} (entry price + 30 points)")
-        else:
-            target = target_50
 
-        if target:
-            target_webhook_payload = {
-                "ticker": config.NQ_TICKER,
-                "action": opposite_action,
-                "price": target,
-                "orderType": "limit",
-                "quantity": str(config.NQ_QUANTITY)
-            }
-            order_executor.send_webhook_to_multiple_urls(target_webhook_payload, [config.NQ_WEBHOOK_URL], "NQ target webhook")
-            print(f"NQ target webhook sent successfully at price: {target}")
+        order_executor.send_webhook_to_multiple_urls(
+            bracket_payload,
+            [config.NQ_WEBHOOK_URL],
+            "NQ bullish entry bracket webhook",
+            is_entry_trade=True,
+            additional_context=additional_context,
+        )
+        print("NQ bullish entry bracket webhook sent successfully")
 
-        if price:
-            price_float = float(price)
-            stop_price = price_float - 20
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-            stop_webhook_payload = {
-                "ticker": config.NQ_TICKER,
-                "action": opposite_action,
-                "time": current_time,
-                "orderType": "stop",
-                "stopPrice": str(stop_price),
-                "quantityType": "fixed_quantity",
-                "quantity": str(config.NQ_QUANTITY)
-            }
-            order_executor.send_webhook_to_multiple_urls(stop_webhook_payload, [config.NQ_WEBHOOK_URL], "NQ stop webhook")
-            print(f"NQ stop webhook sent successfully at price: {stop_price} (7 points below entry {price})")
-            stop = str(stop_price)
-        else:
-            stop = None
-        
+        target = target_50 if target_50 else str(signal_price + 30.0)
+        stop = str(signal_price - 20)
         order_info = {
-            "action": original_action,
+            "action": "buy",
             "ticker": config.NQ_TICKER,
             "price": price,
             "quantity": config.NQ_QUANTITY,
             "stop": stop,
-            "target": target
+            "target": target,
         }
         position_tracker.save_nq_order(order_info)
         print("NQ order saved locally")
-        
+
     except Exception as e:
         print(f"Error processing NQ bullish entry: {e}")
 
@@ -832,80 +806,54 @@ def handle_nq_bearish_entry(price: str, target_50: Optional[str] = None):
     if position_tracker.has_nq_order():
         print("NQ order already open, skipping new order submission")
         return
-    
+
     print(f"NQ bearish entry received with price: {price}")
-    
+
     try:
         order_executor.send_cancel_webhook(config.NQ_TICKER, config.NQ_WEBHOOK_URL)
-        
-        original_action = "sell"
-        opposite_action = "buy"
-        
-        entry_webhook_payload = {
+
+        signal_price = float(price)
+        take_profit_amount = abs(signal_price - float(target_50)) if target_50 else 30
+        if not target_50:
+            print(f"No target provided, using default take profit amount: {take_profit_amount} points")
+
+        bracket_payload = {
             "ticker": config.NQ_TICKER,
-            "action": original_action,
-            "price": price,
+            "action": "sell",
+            "orderType": "market",
+            "signalPrice": signal_price,
             "quantity": str(config.NQ_QUANTITY),
-            "orderType": "market"
+            "takeProfit": {"amount": take_profit_amount},
+            "stopLoss": {"type": "stop", "amount": 20},
         }
-        
+
         additional_context = {
             "source": "nq_webhook",
-            "direction": "short"
+            "direction": "short",
         }
-        
-        order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.NQ_WEBHOOK_URL], "NQ bearish entry webhook", is_entry_trade=True, additional_context=additional_context)
-        print(f"NQ bearish entry webhook sent successfully")
-        
-        target = None
-        if not target_50:
-            price_float = float(price)
-            target = str(price_float - 30.0)
-            print(f"No target provided, setting default target to {target} (entry price - 30 points)")
-        else:
-            target = target_50
 
-        if target:
-            target_webhook_payload = {
-                "ticker": config.NQ_TICKER,
-                "action": opposite_action,
-                "price": target,
-                "orderType": "limit",
-                "quantity": str(config.NQ_QUANTITY)
-            }
-            order_executor.send_webhook_to_multiple_urls(target_webhook_payload, [config.NQ_WEBHOOK_URL], "NQ target webhook")
-            print(f"NQ target webhook sent successfully at price: {target}")
+        order_executor.send_webhook_to_multiple_urls(
+            bracket_payload,
+            [config.NQ_WEBHOOK_URL],
+            "NQ bearish entry bracket webhook",
+            is_entry_trade=True,
+            additional_context=additional_context,
+        )
+        print("NQ bearish entry bracket webhook sent successfully")
 
-        if price:
-            price_float = float(price)
-            stop_price = price_float + 20
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-            stop_webhook_payload = {
-                "ticker": config.NQ_TICKER,
-                "action": opposite_action,
-                "time": current_time,
-                "orderType": "stop",
-                "stopPrice": str(stop_price),
-                "quantityType": "fixed_quantity",
-                "quantity": str(config.NQ_QUANTITY)
-            }
-            order_executor.send_webhook_to_multiple_urls(stop_webhook_payload, [config.NQ_WEBHOOK_URL], "NQ stop webhook")
-            print(f"NQ stop webhook sent successfully at price: {stop_price} (7 points above entry {price})")
-            stop = str(stop_price)
-        else:
-            stop = None
-        
+        target = target_50 if target_50 else str(signal_price - 30.0)
+        stop = str(signal_price + 20)
         order_info = {
-            "action": original_action,
+            "action": "sell",
             "ticker": config.NQ_TICKER,
             "price": price,
             "quantity": config.NQ_QUANTITY,
             "stop": stop,
-            "target": target
+            "target": target,
         }
         position_tracker.save_nq_order(order_info)
         print("NQ order saved locally")
-        
+
     except Exception as e:
         print(f"Error processing NQ bearish entry: {e}")
 
