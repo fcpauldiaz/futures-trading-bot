@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any
 from fastapi import FastAPI
 from pydantic import BaseModel
 import uvicorn
@@ -29,6 +29,42 @@ class OrderPayload(BaseModel):
     quantity: int
     takeProfit: Optional[TakeProfit]
     stopLoss: Optional[StopLoss]
+
+def parse_signal_payload(payload: dict) -> Optional[Dict[str, Any]]:
+    """Parse webhook payload format: signal, action, price, target, tp1, stop, instrument (no action_type in payload).
+    Derives action_type from signal (A_LONG/B_LONG -> bullish_entry, A_SHORT/B_SHORT -> bearish_entry) and action (ENTRY/EXIT)."""
+    signal = payload.get("signal")
+    action = payload.get("action")
+    if signal is None or action is None:
+        return None
+    signal_str = str(signal).upper()
+    action_str = str(action).upper()
+    if action_str == "EXIT":
+        return {
+            "action_type": "exit",
+            "price": str(payload["price"]) if payload.get("price") is not None else None,
+            "tp1": str(payload["tp1"]) if payload.get("tp1") is not None else None,
+            "stop": str(payload["stop"]) if payload.get("stop") is not None else None,
+            "instrument": str(payload["instrument"]).upper() if payload.get("instrument") is not None else None,
+        }
+    if action_str != "ENTRY":
+        return None
+    if signal_str in ("A_LONG", "B_LONG"):
+        action_type = "bullish_entry"
+    elif signal_str in ("A_SHORT", "B_SHORT"):
+        action_type = "bearish_entry"
+    else:
+        return None
+    price_val = payload.get("price")
+    if price_val is None:
+        return None
+    return {
+        "action_type": action_type,
+        "price": str(price_val),
+        "tp1": str(payload["tp1"]) if payload.get("tp1") is not None else None,
+        "stop": str(payload["stop"]) if payload.get("stop") is not None else None,
+        "instrument": str(payload["instrument"]).upper() if payload.get("instrument") is not None else None,
+    }
 
 def handle_trim_message(trim_match):
     if not position_tracker.has_open_order():
@@ -502,24 +538,19 @@ def is_gold_trend_aligned(action: str, trend: Optional[str]) -> bool:
         return True
     return False
 
-def handle_gold_bullish_entry(price: str, target_50: Optional[str] = None):
+def handle_gold_bullish_entry(price: str, target_50: Optional[str] = None, stop_price: Optional[str] = None):
     if position_tracker.has_gold_order():
         print("Gold order already open, skipping new order submission")
         return True
-    
-    # global gold_trend
-    # if not is_gold_trend_aligned("buy", gold_trend):
-    #     print(f"Gold bullish entry skipped - trend mismatch. Current trend: {gold_trend}, requested action: buy")
-    #     return False
-    
+
     print(f"Gold bullish entry received with price: {price}")
-    
+
     try:
         order_executor.send_cancel_webhook(config.GOLD_TICKER, config.GOLD_WEBHOOK_URL)
-        
+
         original_action = "buy"
         opposite_action = "sell"
-        
+
         entry_webhook_payload = {
             "ticker": config.GOLD_TICKER,
             "action": original_action,
@@ -527,24 +558,24 @@ def handle_gold_bullish_entry(price: str, target_50: Optional[str] = None):
             "quantity": str(config.GOLD_QUANTITY),
             "orderType": "market"
         }
-        
+
         additional_context = {
             "source": "gold_webhook",
             "direction": "long"
         }
-        
+
         order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.GOLD_WEBHOOK_URL], "Gold bullish entry webhook", is_entry_trade=True, additional_context=additional_context)
         print(f"Gold bullish entry webhook sent successfully")
 
         target_50_quantity = str(int(config.GOLD_QUANTITY / 1))
         target_quantity = target_50_quantity
-        
+
         target = None
         if not target_50:
             price_float = float(price)
             target = str(price_float + 14.0)
             print(f"No target provided, setting default target to {target} (entry price + 14 points)")
-        
+
         if target_50:
             target_webhook_payload = {
                 "ticker": config.GOLD_TICKER,
@@ -558,18 +589,18 @@ def handle_gold_bullish_entry(price: str, target_50: Optional[str] = None):
 
         if price:
             price_float = float(price)
-            stop_price = price_float - 7.0
+            stop_price_val = float(stop_price) if stop_price is not None else price_float - 7.0
             stop_webhook_payload = {
                 "ticker": config.GOLD_TICKER,
                 "action": opposite_action,
                 "orderType": "stop",
-                "stopPrice": str(stop_price),
+                "stopPrice": str(stop_price_val),
                 "quantityType": "fixed_quantity",
                 "quantity": str(config.GOLD_QUANTITY)
             }
             order_executor.send_webhook_to_multiple_urls(stop_webhook_payload, [config.GOLD_WEBHOOK_URL], "Gold stop webhook")
-            print(f"Gold stop webhook sent successfully at price: {stop_price} (7 points below entry {price})")
-            stop = str(stop_price)
+            print(f"Gold stop webhook sent successfully at price: {stop_price_val}")
+            stop = str(stop_price_val)
         else:
             stop = None
         
@@ -588,21 +619,16 @@ def handle_gold_bullish_entry(price: str, target_50: Optional[str] = None):
         print(f"Error processing gold bullish entry: {e}")
         return False
 
-def handle_gold_bearish_entry(price: str, target_50: Optional[str] = None):
+def handle_gold_bearish_entry(price: str, target_50: Optional[str] = None, stop_price: Optional[str] = None):
     if position_tracker.has_gold_order():
         print("Gold order already open, skipping new order submission")
         return True
-    
-    # global gold_trend
-    # if not is_gold_trend_aligned("sell", gold_trend):
-    #     print(f"Gold bearish entry skipped - trend mismatch. Current trend: {gold_trend}, requested action: sell")
-    #     return False
-    
+
     print(f"Gold bearish entry received with price: {price}")
-    
+
     try:
         order_executor.send_cancel_webhook(config.GOLD_TICKER, config.GOLD_WEBHOOK_URL)
-        
+
         original_action = "sell"
         opposite_action = "buy"
         entry_webhook_payload = {
@@ -612,22 +638,22 @@ def handle_gold_bearish_entry(price: str, target_50: Optional[str] = None):
             "quantity": str(config.GOLD_QUANTITY),
             "orderType": "market"
         }
-        
+
         additional_context = {
             "source": "gold_webhook",
             "direction": "short"
         }
-        
+
         order_executor.send_webhook_to_multiple_urls(entry_webhook_payload, [config.GOLD_WEBHOOK_URL], "Gold bearish entry webhook", is_entry_trade=True, additional_context=additional_context)
         print(f"Gold bearish entry webhook sent successfully")
         target_50_quantity = str(int(config.GOLD_QUANTITY / 1))
-        
+
         target = None
         if not target_50:
             price_float = float(price)
             target = str(price_float - 14.0)
             print(f"No target provided, setting default target to {target} (entry price - 14 points)")
-        
+
         if target_50:
             target_50_webhook_payload = {
                 "ticker": config.GOLD_TICKER,
@@ -637,22 +663,22 @@ def handle_gold_bearish_entry(price: str, target_50: Optional[str] = None):
                 "quantity": target_50_quantity
             }
             order_executor.send_webhook_to_multiple_urls(target_50_webhook_payload, [config.GOLD_WEBHOOK_URL], "Gold target_50 webhook")
-        
+
         if price:
             price_float = float(price)
-            stop_price = price_float + 7.0
+            stop_price_val = float(stop_price) if stop_price is not None else price_float + 7.0
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
             stop_webhook_payload = {
                 "ticker": config.GOLD_TICKER,
                 "action": opposite_action,
                 "time": current_time,
                 "orderType": "stop",
-                "stopPrice": str(stop_price),
+                "stopPrice": str(stop_price_val),
                 "quantityType": "fixed_quantity",
                 "quantity": str(config.GOLD_QUANTITY)
             }
             order_executor.send_webhook_to_multiple_urls(stop_webhook_payload, [config.GOLD_WEBHOOK_URL], "Gold stop webhook")
-            stop = str(stop_price)
+            stop = str(stop_price_val)
         else:
             stop = None
         
@@ -747,7 +773,7 @@ def handle_gold_exit():
     except Exception as e:
         print(f"Error processing gold exit: {e}")
 
-def handle_nq_bullish_entry(price: str, target_50: Optional[str] = None):
+def handle_nq_bullish_entry(price: str, target_50: Optional[str] = None, stop_price: Optional[str] = None):
     if position_tracker.has_nq_order():
         print("NQ order already open, skipping new order submission")
         return
@@ -762,6 +788,10 @@ def handle_nq_bullish_entry(price: str, target_50: Optional[str] = None):
         if not target_50:
             print(f"No target provided, using default take profit amount: {take_profit_amount} points")
 
+        if stop_price is not None:
+            stop_loss = {"type": "stop", "stopPrice": float(stop_price)}
+        else:
+            stop_loss = {"type": "stop", "amount": 20}
         bracket_payload = {
             "ticker": config.NQ_TICKER,
             "action": "buy",
@@ -769,7 +799,7 @@ def handle_nq_bullish_entry(price: str, target_50: Optional[str] = None):
             "signalPrice": signal_price,
             "quantity": str(config.NQ_QUANTITY),
             "takeProfit": {"amount": take_profit_amount},
-            "stopLoss": {"type": "stop", "amount": 20},
+            "stopLoss": stop_loss,
         }
 
         additional_context = {
@@ -787,7 +817,7 @@ def handle_nq_bullish_entry(price: str, target_50: Optional[str] = None):
         print("NQ bullish entry bracket webhook sent successfully")
 
         target = target_50 if target_50 else str(signal_price + 30.0)
-        stop = str(signal_price - 20)
+        stop = stop_price if stop_price else str(signal_price - 20)
         order_info = {
             "action": "buy",
             "ticker": config.NQ_TICKER,
@@ -802,7 +832,7 @@ def handle_nq_bullish_entry(price: str, target_50: Optional[str] = None):
     except Exception as e:
         print(f"Error processing NQ bullish entry: {e}")
 
-def handle_nq_bearish_entry(price: str, target_50: Optional[str] = None):
+def handle_nq_bearish_entry(price: str, target_50: Optional[str] = None, stop_price: Optional[str] = None):
     if position_tracker.has_nq_order():
         print("NQ order already open, skipping new order submission")
         return
@@ -817,6 +847,10 @@ def handle_nq_bearish_entry(price: str, target_50: Optional[str] = None):
         if not target_50:
             print(f"No target provided, using default take profit amount: {take_profit_amount} points")
 
+        if stop_price is not None:
+            stop_loss = {"type": "stop", "stopPrice": float(stop_price)}
+        else:
+            stop_loss = {"type": "stop", "amount": 20}
         bracket_payload = {
             "ticker": config.NQ_TICKER,
             "action": "sell",
@@ -824,7 +858,7 @@ def handle_nq_bearish_entry(price: str, target_50: Optional[str] = None):
             "signalPrice": signal_price,
             "quantity": str(config.NQ_QUANTITY),
             "takeProfit": {"amount": take_profit_amount},
-            "stopLoss": {"type": "stop", "amount": 20},
+            "stopLoss": stop_loss,
         }
 
         additional_context = {
@@ -842,7 +876,7 @@ def handle_nq_bearish_entry(price: str, target_50: Optional[str] = None):
         print("NQ bearish entry bracket webhook sent successfully")
 
         target = target_50 if target_50 else str(signal_price - 30.0)
-        stop = str(signal_price + 20)
+        stop = stop_price if stop_price else str(signal_price + 20)
         order_info = {
             "action": "sell",
             "ticker": config.NQ_TICKER,
@@ -978,17 +1012,41 @@ def handle_gold_trend_webhook(payload: dict):
 def handle_gold_webhook(payload: dict):
     timestamp = datetime.now().isoformat()
     print(f"[{timestamp}] Received Gold payload: {json.dumps(payload, indent=2)}")
-    
+
     try:
+        parsed = parse_signal_payload(payload)
+        if parsed is not None and parsed.get("instrument") is not None and parsed.get("instrument") != "GC":
+            return {"status": "error", "message": f"Instrument {parsed.get('instrument')} not supported on this endpoint", "timestamp": timestamp}
+        if parsed is not None and parsed.get("instrument") == "GC":
+            action_type = parsed["action_type"]
+            price = parsed.get("price")
+            tp1 = parsed.get("tp1")
+            stop = parsed.get("stop")
+            if action_type == "exit":
+                handle_gold_exit()
+                return {"status": "success", "message": "Gold exit processed successfully", "timestamp": timestamp}
+            if action_type == "bullish_entry":
+                if not price:
+                    return {"status": "error", "message": "Price is required", "timestamp": timestamp}
+                result = handle_gold_bullish_entry(price, target_50=tp1, stop_price=stop)
+                if result is False:
+                    return {"status": "success", "message": "Gold bullish entry skipped due to trend mismatch", "timestamp": timestamp}
+                return {"status": "success", "message": "Gold bullish entry processed successfully", "timestamp": timestamp}
+            if action_type == "bearish_entry":
+                if not price:
+                    return {"status": "error", "message": "Price is required", "timestamp": timestamp}
+                result = handle_gold_bearish_entry(price, target_50=tp1, stop_price=stop)
+                if result is False:
+                    return {"status": "success", "message": "Gold bearish entry skipped due to trend mismatch", "timestamp": timestamp}
+                return {"status": "success", "message": "Gold bearish entry processed successfully", "timestamp": timestamp}
+
         action = payload.get("action")
-        
         if not action:
             return {
                 "status": "error",
                 "message": "Action is required",
                 "timestamp": timestamp
             }
-        
         if action == "bullish_entry":
             price = payload.get("price")
             if not price:
@@ -1060,17 +1118,37 @@ def handle_gold_webhook(payload: dict):
 def handle_nq_webhook(payload: dict):
     timestamp = datetime.now().isoformat()
     print(f"[{timestamp}] Received NQ payload: {json.dumps(payload, indent=2)}")
-    
+
     try:
+        parsed = parse_signal_payload(payload)
+        if parsed is not None and parsed.get("instrument") is not None and parsed.get("instrument") not in ("NQ", "MNQ"):
+            return {"status": "error", "message": f"Instrument {parsed.get('instrument')} not supported on this endpoint", "timestamp": timestamp}
+        if parsed is not None and parsed.get("instrument") in ("NQ", "MNQ"):
+            action_type = parsed["action_type"]
+            price = parsed.get("price")
+            tp1 = parsed.get("tp1")
+            stop = parsed.get("stop")
+            if action_type == "exit":
+                handle_nq_exit()
+                return {"status": "success", "message": "NQ exit processed successfully", "timestamp": timestamp}
+            if action_type == "bullish_entry":
+                if not price:
+                    return {"status": "error", "message": "Price is required", "timestamp": timestamp}
+                handle_nq_bullish_entry(price, target_50=tp1, stop_price=stop)
+                return {"status": "success", "message": "NQ bullish entry processed successfully", "timestamp": timestamp}
+            if action_type == "bearish_entry":
+                if not price:
+                    return {"status": "error", "message": "Price is required", "timestamp": timestamp}
+                handle_nq_bearish_entry(price, target_50=tp1, stop_price=stop)
+                return {"status": "success", "message": "NQ bearish entry processed successfully", "timestamp": timestamp}
+
         action = payload.get("action")
-        
         if not action:
             return {
                 "status": "error",
                 "message": "Action is required",
                 "timestamp": timestamp
             }
-        
         if action == "bullish_entry":
             price = payload.get("price")
             if not price:
@@ -1086,7 +1164,6 @@ def handle_nq_webhook(payload: dict):
                 "message": "NQ bullish entry processed successfully",
                 "timestamp": timestamp
             }
-        
         elif action == "bearish_entry":
             price = payload.get("price")
             if not price:
@@ -1102,7 +1179,6 @@ def handle_nq_webhook(payload: dict):
                 "message": "NQ bearish entry processed successfully",
                 "timestamp": timestamp
             }
-        
         elif action == "exit":
             handle_nq_exit()
             return {
