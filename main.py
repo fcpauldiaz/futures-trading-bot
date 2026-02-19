@@ -1015,8 +1015,24 @@ def handle_gold_webhook(payload: dict):
 
     try:
         parsed = parse_signal_payload(payload)
-        if parsed is not None and parsed.get("instrument") is not None and parsed.get("instrument") != "GC":
-            return {"status": "error", "message": f"Instrument {parsed.get('instrument')} not supported on this endpoint", "timestamp": timestamp}
+        if parsed is not None and parsed.get("instrument") in ("NQ", "MNQ"):
+            action_type = parsed["action_type"]
+            price = parsed.get("price")
+            tp1 = parsed.get("tp1")
+            stop = parsed.get("stop")
+            if action_type == "exit":
+                handle_nq_exit()
+                return {"status": "success", "message": "NQ exit processed successfully", "timestamp": timestamp}
+            if action_type == "bullish_entry":
+                if not price:
+                    return {"status": "error", "message": "Price is required", "timestamp": timestamp}
+                handle_nq_bullish_entry(price, target_50=tp1, stop_price=stop)
+                return {"status": "success", "message": "NQ bullish entry processed successfully", "timestamp": timestamp}
+            if action_type == "bearish_entry":
+                if not price:
+                    return {"status": "error", "message": "Price is required", "timestamp": timestamp}
+                handle_nq_bearish_entry(price, target_50=tp1, stop_price=stop)
+                return {"status": "success", "message": "NQ bearish entry processed successfully", "timestamp": timestamp}
         if parsed is not None and parsed.get("instrument") == "GC":
             action_type = parsed["action_type"]
             price = parsed.get("price")
@@ -1121,8 +1137,28 @@ def handle_nq_webhook(payload: dict):
 
     try:
         parsed = parse_signal_payload(payload)
-        if parsed is not None and parsed.get("instrument") is not None and parsed.get("instrument") not in ("NQ", "MNQ"):
-            return {"status": "error", "message": f"Instrument {parsed.get('instrument')} not supported on this endpoint", "timestamp": timestamp}
+        if parsed is not None and parsed.get("instrument") == "GC":
+            action_type = parsed["action_type"]
+            price = parsed.get("price")
+            tp1 = parsed.get("tp1")
+            stop = parsed.get("stop")
+            if action_type == "exit":
+                handle_gold_exit()
+                return {"status": "success", "message": "Gold exit processed successfully", "timestamp": timestamp}
+            if action_type == "bullish_entry":
+                if not price:
+                    return {"status": "error", "message": "Price is required", "timestamp": timestamp}
+                result = handle_gold_bullish_entry(price, target_50=tp1, stop_price=stop)
+                if result is False:
+                    return {"status": "success", "message": "Gold bullish entry skipped due to trend mismatch", "timestamp": timestamp}
+                return {"status": "success", "message": "Gold bullish entry processed successfully", "timestamp": timestamp}
+            if action_type == "bearish_entry":
+                if not price:
+                    return {"status": "error", "message": "Price is required", "timestamp": timestamp}
+                result = handle_gold_bearish_entry(price, target_50=tp1, stop_price=stop)
+                if result is False:
+                    return {"status": "success", "message": "Gold bearish entry skipped due to trend mismatch", "timestamp": timestamp}
+                return {"status": "success", "message": "Gold bearish entry processed successfully", "timestamp": timestamp}
         if parsed is not None and parsed.get("instrument") in ("NQ", "MNQ"):
             action_type = parsed["action_type"]
             price = parsed.get("price")
