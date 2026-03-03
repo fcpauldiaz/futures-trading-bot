@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, TypedDict
 from fastapi import FastAPI
 from pydantic import BaseModel
 import uvicorn
@@ -30,7 +30,16 @@ class OrderPayload(BaseModel):
     takeProfit: Optional[TakeProfit]
     stopLoss: Optional[StopLoss]
 
-def parse_signal_payload(payload: dict) -> Optional[Dict[str, Any]]:
+
+class NormalizedSignal(TypedDict):
+    action_type: str
+    price: Optional[str]
+    tp1: Optional[str]
+    stop: Optional[str]
+    instrument: Optional[str]
+
+
+def parse_signal_payload(payload: dict) -> Optional[NormalizedSignal]:
     """Parse webhook payload format: signal, action, price, target, tp1, stop, instrument (no action_type in payload).
     Derives action_type from signal (A_LONG/B_LONG -> bullish_entry, A_SHORT/B_SHORT -> bearish_entry) and action (ENTRY/EXIT)."""
     signal = payload.get("signal")
@@ -65,6 +74,42 @@ def parse_signal_payload(payload: dict) -> Optional[Dict[str, Any]]:
         "stop": str(payload["stop"]) if payload.get("stop") is not None else None,
         "instrument": str(payload["instrument"]).upper() if payload.get("instrument") is not None else None,
     }
+
+
+def normalize_signal_payload(payload: dict) -> Optional[NormalizedSignal]:
+    raw = payload.get("raw")
+    if isinstance(raw, dict):
+        parsed = parse_signal_payload(raw)
+        if parsed is not None and payload.get("instrument") is not None:
+            parsed = {**parsed, "instrument": str(payload["instrument"]).upper()}
+        return parsed
+    direction = payload.get("direction")
+    action = payload.get("action")
+    if direction is not None and action is not None:
+        action_str = str(action).upper()
+        direction_lower = str(direction).lower()
+        if action_str == "EXIT":
+            action_type = "exit"
+        elif action_str == "ENTRY":
+            if direction_lower == "bearish":
+                action_type = "bearish_entry"
+            elif direction_lower == "bullish":
+                action_type = "bullish_entry"
+            else:
+                return None
+        else:
+            return None
+        price_val = payload.get("price")
+        tp1_val = payload.get("tp1") if payload.get("tp1") is not None else payload.get("target")
+        return {
+            "action_type": action_type,
+            "price": str(price_val) if price_val is not None else None,
+            "tp1": str(tp1_val) if tp1_val is not None else None,
+            "stop": str(payload["stop"]) if payload.get("stop") is not None else None,
+            "instrument": str(payload["instrument"]).upper() if payload.get("instrument") is not None else None,
+        }
+    return parse_signal_payload(payload)
+
 
 def handle_trim_message(trim_match):
     if not position_tracker.has_open_order():
@@ -1014,7 +1059,7 @@ def handle_gold_webhook(payload: dict):
     print(f"[{timestamp}] Received Gold payload: {json.dumps(payload, indent=2)}")
 
     try:
-        parsed = parse_signal_payload(payload)
+        parsed = normalize_signal_payload(payload)
         if parsed is not None and parsed.get("instrument") in ("NQ", "MNQ"):
             action_type = parsed["action_type"]
             price = parsed.get("price")
@@ -1136,7 +1181,7 @@ def handle_nq_webhook(payload: dict):
     print(f"[{timestamp}] Received NQ payload: {json.dumps(payload, indent=2)}")
 
     try:
-        parsed = parse_signal_payload(payload)
+        parsed = normalize_signal_payload(payload)
         if parsed is not None and parsed.get("instrument") == "GC":
             action_type = parsed["action_type"]
             price = parsed.get("price")
