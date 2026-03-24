@@ -80,9 +80,15 @@ def normalize_signal_payload(payload: dict) -> Optional[NormalizedSignal]:
     raw = payload.get("raw")
     if isinstance(raw, dict):
         parsed = parse_signal_payload(raw)
-        if parsed is not None and payload.get("instrument") is not None:
-            parsed = {**parsed, "instrument": str(payload["instrument"]).upper()}
-        return parsed
+        if parsed is None:
+            return None
+        merged = dict(parsed)
+        if payload.get("instrument") is not None:
+            merged["instrument"] = str(payload["instrument"]).upper()
+        for key in ("price", "tp1", "stop"):
+            if payload.get(key) is not None:
+                merged[key] = str(payload[key])
+        return merged
     direction = payload.get("direction")
     action = payload.get("action")
     if direction is not None and action is not None:
@@ -635,9 +641,11 @@ def handle_gold_bullish_entry(price: str, target_50: Optional[str] = None, stop_
         if price:
             price_float = float(price)
             stop_price_val = float(stop_price) if stop_price is not None else price_float - 7.0
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
             stop_webhook_payload = {
                 "ticker": config.GOLD_TICKER,
                 "action": opposite_action,
+                "time": current_time,
                 "orderType": "stop",
                 "stopPrice": str(stop_price_val),
                 "quantityType": "fixed_quantity",
