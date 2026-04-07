@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 from typing import Optional, Dict, Any, TypedDict
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
 import uvicorn
 
@@ -1363,6 +1363,19 @@ def handle_fbd_webhook(payload: dict):
             "message": f"Error processing webhook: {str(e)}",
             "timestamp": timestamp
         }
+
+
+@app.post("/tradingview")
+async def tradingview_webhook(request: Request):
+    raw = await request.body()
+    timestamp = datetime.now().isoformat()
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+        logged = json.dumps(payload, indent=2)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        logged = raw.decode("utf-8", errors="replace")
+    print(f"[{timestamp}] TradingView payload:\n{logged}")
+    return {"status": "ok", "timestamp": timestamp}
 
 
 if __name__ == "__main__":
