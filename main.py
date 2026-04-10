@@ -1,6 +1,6 @@
 import json
-from datetime import datetime
-from typing import Optional, Dict, Any, TypedDict
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any, TypedDict, Literal
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
 import uvicorn
@@ -13,6 +13,14 @@ import position_tracker
 app = FastAPI()
 
 gold_trend: Optional[str] = None
+
+
+class TradingViewArmState(TypedDict):
+    expires_at: datetime
+    direction: Literal["long", "short"]
+
+
+tradingview_arm: Optional[TradingViewArmState] = None
 
 class TakeProfit(BaseModel):
     limitPrice: float
@@ -1365,6 +1373,128 @@ def handle_fbd_webhook(payload: dict):
         }
 
 
+def process_tradingview_signals(text: str, timestamp: str) -> dict:
+    global tradingview_arm
+    if tradingview_arm is not None and datetime.now() > tradingview_arm["expires_at"]:
+        tradingview_arm = None
+
+    stop_price = message_parser.parse_tradingview_stop_loss_hit(text)
+    if stop_price is not None:
+        if not position_tracker.has_nq_order():
+            return {
+                "status": "ok",
+                "action": "ignored",
+                "reason": "no_open_nq_position",
+                "signal": "stop_loss",
+                "timestamp": timestamp,
+            }
+        handle_nq_exit()
+        tradingview_arm = None
+        return {
+            "status": "ok",
+            "action": "exited",
+            "reason": "stop_loss",
+            "price": stop_price,
+            "timestamp": timestamp,
+        }
+
+    exit_res = message_parser.parse_tradingview_exit(text)
+    if exit_res is not None:
+        if not position_tracker.has_nq_order():
+            return {
+                "status": "ok",
+                "action": "ignored",
+                "reason": "no_open_nq_position",
+                "signal": "exit",
+                "timestamp": timestamp,
+            }
+        order_wrap = position_tracker.get_nq_order_info()
+        if not order_wrap or "order_info" not in order_wrap:
+            return {
+                "status": "ok",
+                "action": "ignored",
+                "reason": "no_order_info",
+                "timestamp": timestamp,
+            }
+        action = order_wrap["order_info"].get("action")
+        position_is_long = action == "buy"
+        exit_is_long = exit_res["exit_side"] == "long"
+        if position_is_long != exit_is_long:
+            return {
+                "status": "ok",
+                "action": "ignored",
+                "reason": "exit_side_mismatch",
+                "timestamp": timestamp,
+            }
+        handle_nq_exit()
+        tradingview_arm = None
+        return {
+            "status": "ok",
+            "action": "exited",
+            "reason": "exit",
+            "price": exit_res["price"],
+            "timestamp": timestamp,
+        }
+
+    entry = message_parser.parse_tradingview_entry(text)
+    if entry is not None:
+        if tradingview_arm is None:
+            return {
+                "status": "ok",
+                "action": "ignored",
+                "reason": "not_armed",
+                "timestamp": timestamp,
+            }
+        if datetime.now() > tradingview_arm["expires_at"]:
+            tradingview_arm = None
+            return {
+                "status": "ok",
+                "action": "ignored",
+                "reason": "arm_expired",
+                "timestamp": timestamp,
+            }
+        if entry["direction"] != tradingview_arm["direction"]:
+            return {
+                "status": "ok",
+                "action": "ignored",
+                "reason": "direction_mismatch",
+                "timestamp": timestamp,
+            }
+        price = entry["price"]
+        if entry["direction"] == "long":
+            handle_nq_bullish_entry(price)
+        else:
+            handle_nq_bearish_entry(price)
+        tradingview_arm = None
+        return {
+            "status": "ok",
+            "action": "executed",
+            "direction": entry["direction"],
+            "price": price,
+            "timestamp": timestamp,
+        }
+
+    arm_dir = message_parser.parse_tradingview_arm_direction(text)
+    if arm_dir is not None:
+        tradingview_arm = {
+            "expires_at": datetime.now() + timedelta(seconds=config.TRADINGVIEW_ARM_TTL_SECONDS),
+            "direction": arm_dir,
+        }
+        return {
+            "status": "ok",
+            "action": "armed",
+            "direction": arm_dir,
+            "timestamp": timestamp,
+        }
+
+    return {
+        "status": "ok",
+        "action": "ignored",
+        "reason": "no_matching_pattern",
+        "timestamp": timestamp,
+    }
+
+
 @app.post("/tradingview")
 async def tradingview_webhook(request: Request):
     raw = await request.body()
@@ -1375,7 +1505,10 @@ async def tradingview_webhook(request: Request):
     except (json.JSONDecodeError, UnicodeDecodeError):
         logged = raw.decode("utf-8", errors="replace")
     print(f"[{timestamp}] TradingView payload:\n{logged}")
-    return {"status": "ok", "timestamp": timestamp}
+    text = message_parser.normalize_tradingview_alert_text(raw)
+    result = process_tradingview_signals(text, timestamp)
+    print(f"[{timestamp}] TradingView result: {json.dumps(result)}")
+    return result
 
 
 if __name__ == "__main__":

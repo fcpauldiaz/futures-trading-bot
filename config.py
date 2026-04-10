@@ -50,3 +50,30 @@ STOP_LOSS_SIMPLE_PATTERN = re.compile(
 
 TRADING_MODE = os.getenv("TRADING_MODE", "paper")
 
+TRADINGVIEW_ARM_TTL_SECONDS = int(os.getenv("TRADINGVIEW_ARM_TTL_SECONDS", "600"))
+
+TRADINGVIEW_DTR_ARM_PATTERN = re.compile(
+    r"DTR\s+9AM\s*[—\-–]\s*IFVG\s*[▼▲]\s*(SHORT|LONG)\s+confirmed",
+    re.IGNORECASE,
+)
+
+TRADINGVIEW_TSR_ARM_PATTERN = re.compile(
+    r"TSR\s+CR:\s*(SHORT|LONG)\s+signal\s+triggered",
+    re.IGNORECASE,
+)
+
+TRADINGVIEW_NQ_ENTRY_PATTERN = re.compile(
+    r"NQ1!\s*\(\d+\)\s*\|\s*(SELL|LONG)\s+at\s+([\d.]+)",
+    re.IGNORECASE,
+)
+
+TRADINGVIEW_NQ_EXIT_PATTERN = re.compile(
+    r"NQ1!\s*\(\d+\)\s*\|\s*EXIT\s+(LONG|SHORT)\s+at\s+([\d.]+)",
+    re.IGNORECASE,
+)
+
+TRADINGVIEW_NQ_STOP_LOSS_PATTERN = re.compile(
+    r"NQ1!\s*\(\d+\)\s*\|\s*STOP\s+LOSS\s+hit\s+at\s+([\d.]+)",
+    re.IGNORECASE,
+)
+
